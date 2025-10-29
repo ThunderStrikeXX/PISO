@@ -233,7 +233,7 @@ int main() {
 
                 aU[i] = -std::max(F_l, 0.0) - D_l;
                 cU[i] = std::max(-F_r, 0.0) - D_r;
-                bU[i] = (std::max(F_r, 0.0) - std::max(-F_l, 0.0)) + rho_P * dz / dt + D_l + D_r + mu_P / K + CF * mu_P / sqrt(K) * abs(u[i]);
+                bU[i] = (std::max(F_r, 0.0) - std::max(-F_l, 0.0)) + rho_P * dz / dt + D_l + D_r + mu_P / K * dz + CF * mu_P * dz / sqrt(K) * abs(u[i]);
                 dU[i] = -0.5 * (p[i + 1] - p[i - 1]) + rho_P * u[i] * dz / dt + Su[i] * dz;
             }
 
