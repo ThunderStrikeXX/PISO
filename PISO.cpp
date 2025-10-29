@@ -209,8 +209,12 @@ int main() {
             #pragma omp parallel for
             for (int i = 1; i < N - 1; i++) {
 
-                const double D = liquid_sodium::mu(T[i]) / dz;
-                const double rho_i = liquid_sodium::rho(T[i]);
+                const double rho_P = liquid_sodium::rho(T[i]);
+                const double rho_L = liquid_sodium::rho(T[i - 1]);
+                const double rho_R = liquid_sodium::rho(T[i + 1]);
+                const double D_l = 0.5 * (rho_P + rho_L) / dz;
+                const double D_r = 0.5 * (rho_P + rho_R) / dz;
+
 
                 const double rhie_chow_l = -(1.0 / bU[i - 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
                 const double rhie_chow_r = -(1.0 / bU[i + 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
@@ -218,16 +222,16 @@ int main() {
                 const double u_l_face = 0.5 * (u[i - 1] + u[i]) + rhie_chow_on_off * rhie_chow_l;
                 const double u_r_face = 0.5 * (u[i] + u[i + 1]) + rhie_chow_on_off * rhie_chow_r;
 
-                const double rho_l = (u_l_face >= 0) ? liquid_sodium::rho(T[i - 1]) : rho_i;
-                const double rho_r = (u_r_face >= 0) ? rho_i : liquid_sodium::rho(T[i + 1]);
+                const double rho_l = (u_l_face >= 0) ? rho_L : rho_P;
+                const double rho_r = (u_r_face >= 0) ? rho_P : rho_R;
 
                 const double F_l = rho_l * u_l_face;
                 const double F_r = rho_r * u_r_face;
 
-                aU[i] = -std::max(F_l, 0.0) - D;
-                cU[i] = std::max(-F_r, 0.0) - D;
-                bU[i] = (std::max(F_r, 0.0) - std::max(-F_l, 0.0)) + rho_i * dz / dt + 2 * D;
-                dU[i] = -0.5 * (p[i + 1] - p[i - 1]) + rho_i * u[i] * dz / dt + Su[i] * dz;
+                aU[i] = -std::max(F_l, 0.0) - D_l;
+                cU[i] = std::max(-F_r, 0.0) - D_r;
+                bU[i] = (std::max(F_r, 0.0) - std::max(-F_l, 0.0)) + rho_P * dz / dt + D_l + D_r;
+                dU[i] = -0.5 * (p[i + 1] - p[i - 1]) + rho_P * u[i] * dz / dt + Su[i] * dz;
             }
 
             // Velocity BC: Dirichlet at l, dirichlet at r
@@ -347,7 +351,6 @@ int main() {
 
         #pragma region temperature_calculator
 
-        // 5. Temperature loop
         std::vector<double> aT(N, 0.0), bT(N, 0.0), cT(N, 0.0), dT(N, 0.0);
 
         #pragma omp parallel for
