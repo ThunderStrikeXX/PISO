@@ -74,8 +74,8 @@ namespace liquid_sodium {
 
     // Specific heat [J/(kg·K)]
     double cp(double T) {
-        double dT = T - 273.15;
-        return 1436.72 - 0.58 * dT + 4.627e-4 * dT * dT;
+        double dXT = T - 273.15;
+        return 1436.72 - 0.58 * dXT + 4.627e-4 * dXT * dXT;
     }
 
     // Dynamic viscosity [Pa·s] using Shpilrain et al. correlation, valid for 371 K < T < 2500 K
@@ -119,6 +119,7 @@ int main() {
     std::vector<double> u(N, 0.001), p(N, 50000.0), T(N, T_init);                   // Collocated grid, values in center-cell
     std::vector<double> p_storage(N + 2, 50000.0);                                  // Storage for ghost nodes at the boundaries
     double* p_padded = &p_storage[1];                                               // Poìnter to work on the storage with the same indes
+    std::vector<double> T_old(N, T_init), p_old(N, 50000.0);        // Backup values
     std::vector<double> p_prime(N, 0.0);                                            // Pressure correction
 
     // Boundary conditions (Dirichlet p at outlet, T at both ends, u inlet)
@@ -193,6 +194,10 @@ int main() {
             << ", max courant number: " << max_u * dt / dz
             << ", max reynolds number: " << max_u * D_pipe * liquid_sodium::rho(min_T) / liquid_sodium::mu(min_T) << "\n";
 
+        // Backup variables
+        T_old = T;
+        p_old = p;
+
         // PISO iterations
         int iter = 0;
         double maxErr = 1.0;    
@@ -252,11 +257,11 @@ int main() {
 
                 // =======================================================================
                 //
-                //                       [PRESSURE CORRECTOR]
+                //                       [CONTINUITY SATISFACTOR]
                 //
                 // =======================================================================
 
-                #pragma region pressure_corrector
+                #pragma region continuity_satisfactor
 
                 std::vector<double> aP(N, 0.0), bP(N, 0.0), cP(N, 0.0), dP(N, 0.0);
 
@@ -268,15 +273,13 @@ int main() {
                     const double rhie_chow_l = -(1.0 / bU[i - 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
                     const double rhie_chow_r = -(1.0 / bU[i + 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
 
-                    const double dudz = (u[i + 1] - u[i - 1]) / (2 * dz) + rhie_chow_on_off * (rhie_chow_r - rhie_chow_l);
+                    const double rho_l = 0.5 * (liquid_sodium::rho(T[i - 1]) + rho_i);
+                    const double d_l_face = 0.5 * (1.0 / bU[i - 1] + 1.0 / bU[i]); // 1/Ap average on west face
+                    const double E_l = rho_l * d_l_face / dz;
 
-                    const double rho_w = 0.5 * (liquid_sodium::rho(T[i - 1]) + rho_i);
-                    const double d_w_face = 0.5 * (1.0 / bU[i - 1] + 1.0 / bU[i]); // 1/Ap average on west face
-                    const double E_w = rho_w * d_w_face / (dz * dz);
-
-                    const double rho_e = 0.5 * (rho_i + liquid_sodium::rho(T[i + 1]));
-                    const double d_e_face = 0.5 * (1.0 / bU[i] + 1.0 / bU[i + 1]);  // 1/Ap average on east face
-                    const double E_e = rho_e * d_e_face / (dz * dz);
+                    const double rho_r = 0.5 * (rho_i + liquid_sodium::rho(T[i + 1]));
+                    const double d_r_face = 0.5 * (1.0 / bU[i] + 1.0 / bU[i + 1]);  // 1/Ap average on east face
+                    const double E_r = rho_r * d_r_face / dz;
 
                     const double u_w_star = 0.5 * (u[i - 1] + u[i]) + rhie_chow_on_off * rhie_chow_l;
                     const double mdot_w_star = (u_w_star > 0.0) ? liquid_sodium::rho(T[i - 1]) * u_w_star : rho_i * u_w_star;
@@ -284,32 +287,29 @@ int main() {
                     const double u_e_star = 0.5 * (u[i] + u[i + 1]) + rhie_chow_on_off * rhie_chow_r;
                     const double mdot_e_star = (u_e_star > 0.0) ? rho_i * u_e_star : liquid_sodium::rho(T[i + 1]) * u_e_star;
 
-                    const double mass_imbalance = (mdot_e_star - mdot_w_star) / dz;
+                    const double mass_imbalance = (mdot_e_star - mdot_w_star);
 
-                    aP[i] = -E_w;
-                    cP[i] = -E_e;
-                    bP[i] = E_w + E_e;
-                    dP[i] = Sm[i] - mass_imbalance;
+                    aP[i] = -E_l;
+                    cP[i] = -E_r;
+                    bP[i] = E_r + E_r;
+                    dP[i] = Sm[i] * dz - mass_imbalance;
                 }
 
-                // Pressure correction zero on the right side (pressure must remain constant)
-                aP[N - 1] = 0; bP[N - 1] = 1; dP[N - 1] = 0;
-
-                // Pressure correction gradient zero on the left side
-                cP[0] = -1; bP[0] = 1; dP[0] = 0;
+                // BCs for p': zero gradient aVT inlet and zero correction aVT outlet
+                bP[0] = 1.0; cP[0] = -1.0; dP[0] = 0.0;
+                bP[N - 1] = 1.0; aP[N - 1] = 0.0; dP[N - 1] = 0.0;
 
                 p_prime = solveTridiagonal(aP, bP, cP, dP);
-                printf("");
 
                 #pragma endregion
 
                 // =======================================================================
                 //
-                //                        [PRESSURE UPDATER]
+                //                        [PRESSURE CORRECTOR]
                 //
                 // =======================================================================
 
-                #pragma region pressure_updater
+                #pragma region pressure_corrector
 
                 for (int i = 0; i < N; i++) {
 
@@ -324,11 +324,11 @@ int main() {
 
                 // =======================================================================
                 //
-                //                        [VELOCITY UPDATER]
+                //                        [VELOCITY CORRECTOR]
                 //
                 // =======================================================================
 
-                #pragma region velocity_updater
+                #pragma region velocity_corrector
 
                 maxErr = 0.0;
                 for (int i = 1; i < N - 1; i++) {
@@ -354,50 +354,61 @@ int main() {
 
         #pragma region temperature_calculator
 
-        std::vector<double> aT(N, 0.0), bT(N, 0.0), cT(N, 0.0), dT(N, 0.0);
+        std::vector<double> aXT(N, 0.0), bXT(N, 0.0), cXT(N, 0.0), dXT(N, 0.0);
 
         #pragma omp parallel for
         for (int i = 1; i < N - 1; i++) {
 
-            double k = liquid_sodium::k(T[i]);
-            double cp = liquid_sodium::cp(T[i]);
-            double rho_i = liquid_sodium::rho(T[i]);
+            const double rho_P = liquid_sodium::rho(T[i]);
+            const double rho_L = liquid_sodium::rho(T[i - 1]);
+            const double rho_R = liquid_sodium::rho(T[i + 1]);
 
-            double rhoCp_dt = rho_i * cp / dt;
+            const double k_cond_P = liquid_sodium::k(T[i]);
+            const double k_cond_L = liquid_sodium::k(T[i - 1]);
+            const double k_cond_R = liquid_sodium::k(T[i + 1]);
 
-            double D_w = k / (dz * dz);
-            double D_e = k / (dz * dz);
+            const double cp_P = liquid_sodium::cp(T[i]);
+            const double cp_L = liquid_sodium::cp(T[i - 1]);
+            const double cp_R = liquid_sodium::cp(T[i + 1]);
 
-            double rhie_chow_l = -(1.0 / bU[i - 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
-            double rhie_chow_r = -(1.0 / bU[i + 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
+            const double rhoCp_dzdt = rho_P * cp_P * dz / dt;
 
-            double u_l_face = 0.5 * (u[i - 1] + u[i]) + rhie_chow_on_off * rhie_chow_l;
-            double u_r_face = 0.5 * (u[i] + u[i + 1]) + rhie_chow_on_off * rhie_chow_r;
+            // Linear interpolation diffusion coefficient
+            const double D_l = 0.5 * (k_cond_P + k_cond_L) / dz;
+            const double D_r = 0.5 * (k_cond_P + k_cond_R) / dz;
 
-            double rho_w = (u_l_face >= 0) ? liquid_sodium::rho(T[i - 1]) : rho_i;
-            double rho_e = (u_r_face >= 0) ? rho_i : liquid_sodium::rho(T[i + 1]);
+            const double rhie_chow_l = -(1.0 / bU[i - 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
+            const double rhie_chow_r = -(1.0 / bU[i + 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
 
-            double Fw = rho_w * u_l_face;
-            double Fe = rho_e * u_r_face;
+            const double u_l_face = 0.5 * (u[i - 1] + u[i]) + rhie_chow_on_off * rhie_chow_l;
+            const double u_r_face = 0.5 * (u[i] + u[i + 1]) + rhie_chow_on_off * rhie_chow_r;
 
-            double C_w_dx = (Fw * cp) / dz;
-            double C_e_dx = (Fe * cp) / dz;
+            // Upwind density
+            const double rho_l = (u_l_face >= 0) ? rho_L : rho_P;
+            const double rho_r = (u_r_face >= 0) ? rho_P : rho_R;
 
-            double A_w = D_w + std::max(C_w_dx, 0.0);
-            double A_e = D_e + std::max(-C_e_dx, 0.0);
+            // Upwind specific heat
+            const double cp_l = (u_l_face >= 0) ? cp_L : cp_P;
+            const double cp_r = (u_r_face >= 0) ? cp_P : cp_R;
 
-            aT[i] = -A_w;
-            cT[i] = -A_e;
-            bT[i] = A_w + A_e + rhoCp_dt;
+            const double Fl = rho_l * u_l_face;
+            const double Fr = rho_r * u_r_face;
 
-            dT[i] = rhoCp_dt * T[i] + St[i];
+            const double C_l = (Fl * cp_l);
+            const double C_r = (Fr * cp_r);
+
+            aXT[i] = -D_l - std::max(C_l, 0.0);
+            cXT[i] = -D_r + std::max(-C_r, 0.0);
+            bXT[i] = (std::max(C_r, 0.0) - std::max(-C_l, 0.0)) + D_l + D_r + rhoCp_dzdt;
+
+            dXT[i] = rhoCp_dzdt * T_old[i] + St[i] * dz;
         }
 
         // Temperature BCs
-        bT[0] = 1.0; cT[0] = 0.0; dT[0] = T_inlet;
-        aT[N - 1] = 0.0; bT[N - 1] = 1.0; dT[N - 1] = T_outlet;
+        bXT[0] = 1.0; cXT[0] = 0.0; dXT[0] = T_inlet;
+        aXT[N - 1] = 0.0; bXT[N - 1] = 1.0; dXT[N - 1] = T_outlet;
 
-        T = solveTridiagonal(aT, bT, cT, dT);
+        T = solveTridiagonal(aXT, bXT, cXT, dXT);
 
         #pragma endregion
 
