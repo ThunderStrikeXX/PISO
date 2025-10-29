@@ -160,8 +160,8 @@ int main() {
 
     for (int i = 1; i < N - 1; ++i) {
 
-        if (i > 0 && i <= energy_source_nodes) St[i] = 1.0;
-        else if (i >= (N - energy_sink_nodes) && i < (N - 1)) St[i] = -1.0;
+        if (i > 0 && i <= energy_source_nodes) St[i] = 100000000.0;
+        else if (i >= (N - energy_sink_nodes) && i < (N - 1)) St[i] = -100000000.0;
 
     }
 
