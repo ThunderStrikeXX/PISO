@@ -1,3 +1,4 @@
+#pragma once
 #include <iostream>
 #include <vector>
 #include <cmath>
@@ -212,9 +213,11 @@ int main() {
                 const double rho_P = liquid_sodium::rho(T[i]);
                 const double rho_L = liquid_sodium::rho(T[i - 1]);
                 const double rho_R = liquid_sodium::rho(T[i + 1]);
+
                 const double D_l = 0.5 * (rho_P + rho_L) / dz;
                 const double D_r = 0.5 * (rho_P + rho_R) / dz;
 
+                const double mu_P = liquid_sodium::mu(T[i]);
 
                 const double rhie_chow_l = -(1.0 / bU[i - 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
                 const double rhie_chow_r = -(1.0 / bU[i + 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
@@ -230,7 +233,7 @@ int main() {
 
                 aU[i] = -std::max(F_l, 0.0) - D_l;
                 cU[i] = std::max(-F_r, 0.0) - D_r;
-                bU[i] = (std::max(F_r, 0.0) - std::max(-F_l, 0.0)) + rho_P * dz / dt + D_l + D_r;
+                bU[i] = (std::max(F_r, 0.0) - std::max(-F_l, 0.0)) + rho_P * dz / dt + D_l + D_r + mu_P / K + CF * mu_P / sqrt(K) * abs(u[i]);
                 dU[i] = -0.5 * (p[i + 1] - p[i - 1]) + rho_P * u[i] * dz / dt + Su[i] * dz;
             }
 
