@@ -126,8 +126,6 @@ int main() {
     const double u_inlet = 0.0;             // Inlet velocity [m/s]
     const double u_outlet = 0.0;            // Outlet velocity [m/s]
     const double p_outlet = 50000.0;        // Outlet pressure [Pa]
-    const double T_inlet = 300.0;           // Inlet temperature [K] (evaporator)
-    const double T_outlet = 100.0;          // Outlet temperature [K] (condenser)
 
 	// Output file
     std::ofstream fout("solution_PISO_liquid.txt");
@@ -169,12 +167,6 @@ int main() {
 
     // Models
     const int rhie_chow_on_off = 1;  // 0: no RC correction, 1: with RC correction
-
-    // Pressure relaxation factor
-	const double p_relax = 1.0;
-
-    // Velocity relaxation factor
-    const double u_relax = 1.0;
 
     // The coefficient bU is needed in momentum predictor loop and pressure correction to estimate the velocities at the faces using the Rhie and Chow correction
     std::vector<double> aU(N, 0.0), bU(N, liquid_sodium::rho(T_init) * dz / dt + 2 * liquid_sodium::mu(T_init) / dz), cU(N, 0.0), dU(N, 0.0);
@@ -268,30 +260,32 @@ int main() {
                 #pragma omp parallel for
                 for (int i = 1; i < N - 1; i++) {
 
-                    const double rho_i = liquid_sodium::rho(T[i]);
+                    const double rho_P = liquid_sodium::rho(T[i]);
+                    const double rho_L = liquid_sodium::rho(T[i - 1]);
+                    const double rho_R = liquid_sodium::rho(T[i + 1]);
 
                     const double rhie_chow_l = -(1.0 / bU[i - 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
                     const double rhie_chow_r = -(1.0 / bU[i + 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
 
-                    const double rho_l = 0.5 * (liquid_sodium::rho(T[i - 1]) + rho_i);
+                    const double rho_l = 0.5 * (rho_L + rho_P);
                     const double d_l_face = 0.5 * (1.0 / bU[i - 1] + 1.0 / bU[i]); // 1/Ap average on west face
                     const double E_l = rho_l * d_l_face / dz;
 
-                    const double rho_r = 0.5 * (rho_i + liquid_sodium::rho(T[i + 1]));
+                    const double rho_r = 0.5 * (rho_P + rho_R);
                     const double d_r_face = 0.5 * (1.0 / bU[i] + 1.0 / bU[i + 1]);  // 1/Ap average on east face
                     const double E_r = rho_r * d_r_face / dz;
 
                     const double u_w_star = 0.5 * (u[i - 1] + u[i]) + rhie_chow_on_off * rhie_chow_l;
-                    const double mdot_w_star = (u_w_star > 0.0) ? liquid_sodium::rho(T[i - 1]) * u_w_star : rho_i * u_w_star;
+                    const double mdot_w_star = (u_w_star > 0.0) ? rho_L * u_w_star : rho_P * u_w_star;
 
                     const double u_e_star = 0.5 * (u[i] + u[i + 1]) + rhie_chow_on_off * rhie_chow_r;
-                    const double mdot_e_star = (u_e_star > 0.0) ? rho_i * u_e_star : liquid_sodium::rho(T[i + 1]) * u_e_star;
+                    const double mdot_e_star = (u_e_star > 0.0) ? rho_P * u_e_star : rho_R * u_e_star;
 
                     const double mass_imbalance = (mdot_e_star - mdot_w_star);
 
                     aP[i] = -E_l;
                     cP[i] = -E_r;
-                    bP[i] = E_r + E_r;
+                    bP[i] = E_l + E_r;
                     dP[i] = Sm[i] * dz - mass_imbalance;
                 }
 
@@ -405,8 +399,8 @@ int main() {
         }
 
         // Temperature BCs
-        bXT[0] = 1.0; cXT[0] = 0.0; dXT[0] = T_inlet;
-        aXT[N - 1] = 0.0; bXT[N - 1] = 1.0; dXT[N - 1] = T_outlet;
+        bXT[0] = 1.0; cXT[0] = -1.0; dXT[0] = 0.0;
+        aXT[N - 1] = -1.0; bXT[N - 1] = 1.0; dXT[N - 1] = 0.0;
 
         T = solveTridiagonal(aXT, bXT, cXT, dXT);
 
