@@ -211,10 +211,12 @@ int main() {
                 const double rho_L = liquid_sodium::rho(T[i - 1]);
                 const double rho_R = liquid_sodium::rho(T[i + 1]);
 
-                const double D_l = 0.5 * (rho_P + rho_L) / dz;
-                const double D_r = 0.5 * (rho_P + rho_R) / dz;
-
                 const double mu_P = liquid_sodium::mu(T[i]);
+                const double mu_L = liquid_sodium::mu(T[i - 1]);
+                const double mu_R = liquid_sodium::mu(T[i + 1]);
+
+                const double D_l = 0.5 * (mu_P + mu_L) / dz;
+                const double D_r = 0.5 * (mu_P + mu_R) / dz;
 
                 const double rhie_chow_l = -(1.0 / bU[i - 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
                 const double rhie_chow_r = -(1.0 / bU[i + 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
@@ -275,17 +277,17 @@ int main() {
                     const double d_r_face = 0.5 * (1.0 / bU[i] + 1.0 / bU[i + 1]);  // 1/Ap average on east face
                     const double E_r = rho_r * d_r_face / dz;
 
-                    const double u_w_star = 0.5 * (u[i - 1] + u[i]) + rhie_chow_on_off * rhie_chow_l;
-                    const double mdot_w_star = (u_w_star > 0.0) ? rho_L * u_w_star : rho_P * u_w_star;
+                    const double u_l_star = 0.5 * (u[i - 1] + u[i]) + rhie_chow_on_off * rhie_chow_l;
+                    const double mdot_l_star = (u_l_star > 0.0) ? rho_L * u_l_star : rho_P * u_l_star;
 
-                    const double u_e_star = 0.5 * (u[i] + u[i + 1]) + rhie_chow_on_off * rhie_chow_r;
-                    const double mdot_e_star = (u_e_star > 0.0) ? rho_P * u_e_star : rho_R * u_e_star;
+                    const double u_r_star = 0.5 * (u[i] + u[i + 1]) + rhie_chow_on_off * rhie_chow_r;
+                    const double mdot_r_star = (u_r_star > 0.0) ? rho_P * u_r_star : rho_R * u_r_star;
 
-                    const double mass_imbalance = (mdot_e_star - mdot_w_star);
+                    const double mass_imbalance = (mdot_r_star - mdot_l_star);
 
                     aP[i] = -E_l;
                     cP[i] = -E_r;
-                    bP[i] = E_l + E_r;
+                    bP[i] = E_l + E_r;          // No compressibility term
                     dP[i] = Sm[i] * dz - mass_imbalance;
                 }
 
