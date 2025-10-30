@@ -66,20 +66,37 @@ namespace liquid_sodium {
     // Critical temperature [K]
     constexpr double Tcrit = 2509.46;
 
+    // Solidification temperature, gives warning if below
+    constexpr double Tsolid = 370.87;
+
     // Density [kg/m^3]
-    double rho(double T) { return 219.0 + 275.32 * (1.0 - T / Tcrit) + 511.58 * pow(1.0 - T / Tcrit, 0.5); }
+    double rho(double T) { 
+
+        if (T < Tsolid) std::cout << "Warning, temperature " << T << " is below solidification temperature!";
+        return 219.0 + 275.32 * (1.0 - T / Tcrit) + 511.58 * pow(1.0 - T / Tcrit, 0.5); 
+    }
 
     // Thermal conductivity [W/(m·K)]
-    double k(double T) { return 124.67 - 0.11381 * T + 5.5226e-5 * T * T - 1.1842e-8 * T * T * T; }
+    double k(double T) { 
+        
+        if (T < Tsolid) std::cout << "Warning, temperature " << T << " is below solidification temperature!";
+        return 124.67 - 0.11381 * T + 5.5226e-5 * T * T - 1.1842e-8 * T * T * T; 
+    }
 
     // Specific heat [J/(kg·K)]
     double cp(double T) {
+
+        if (T < Tsolid) std::cout << "Warning, temperature " << T << " is below solidification temperature!";
         double dXT = T - 273.15;
         return 1436.72 - 0.58 * dXT + 4.627e-4 * dXT * dXT;
     }
 
     // Dynamic viscosity [Pa·s] using Shpilrain et al. correlation, valid for 371 K < T < 2500 K
-    double mu(double T) { return std::exp(-6.4406 - 0.3958 * std::log(T) + 556.835 / T); }
+    double mu(double T) { 
+        
+        if (T < Tsolid) std::cout << "Warning, temperature " << T << " is below solidification temperature!";
+        return std::exp(-6.4406 - 0.3958 * std::log(T) + 556.835 / T); 
+    }
 }
 
 #pragma endregion
@@ -96,18 +113,18 @@ int main() {
 
 	// Geometric parameters
     const double L = 1.0;                // Length of the domain
-    const int N = 100;                   // Number of nodes (collocated grid)
+    const int N = 1000;                   // Number of nodes (collocated grid)
     const double dz = L / (N - 1);       // Distance between nodes
     const double D_pipe = 0.1;           // Pipe diameter [m], used only to estimate Reynolds number
 
     // Physical parameters
     const double K = 1e-6;              // Permeability [m^2]
 	const double CF = 0.0;              // Forchheimer coefficient [1/m]
-    const double T_init = 200;
+    const double T_init = 600;
 
 	// Time-stepping parameters
-	const double dt = 0.001;                                // Timestep [s]
-	const double t_max = 1.0;                               // Maximum time [s]
+	const double dt = 0.1;                                // Timestep [s]
+	const double t_max = 1000.0;                               // Maximum time [s]
 	const int t_iter = (int)std::round(t_max / dt);         // Number of timesteps
 
     // PISO parameters
@@ -160,8 +177,8 @@ int main() {
 
     for (int i = 1; i < N - 1; ++i) {
 
-        if (i > 0 && i <= energy_source_nodes) St[i] = 100000000.0;
-        else if (i >= (N - energy_sink_nodes) && i < (N - 1)) St[i] = -100000000.0;
+        if (i > 0 && i <= energy_source_nodes) St[i] = 1000000.0;
+        else if (i >= (N - energy_sink_nodes) && i < (N - 1)) St[i] = -1000000.0;
 
     }
 
