@@ -113,7 +113,7 @@ int main() {
 
 	// Geometric parameters
     const double L = 1.0;                // Length of the domain
-    const int N = 1000;                   // Number of nodes (collocated grid)
+    const int N = 100;                   // Number of nodes (collocated grid)
     const double dz = L / (N - 1);       // Distance between nodes
     const double D_pipe = 0.1;           // Pipe diameter [m], used only to estimate Reynolds number
 
@@ -133,7 +133,7 @@ int main() {
 	const double tol = 1e-8;             // Tolerance for the inner iterations [-]
 
     // Initial conditions
-    std::vector<double> u(N, 0.001), p(N, 50000.0), T(N, T_init);                   // Collocated grid, values in center-cell
+    std::vector<double> u(N, -0.001), p(N, 50000.0), T(N, T_init);                   // Collocated grid, values in center-cell
     std::vector<double> p_storage(N + 2, 50000.0);                                  // Storage for ghost nodes at the boundaries
     double* p_padded = &p_storage[1];                                               // Poìnter to work on the storage with the same indes
     std::vector<double> T_old(N, T_init), p_old(N, 50000.0);        // Backup values
@@ -158,8 +158,8 @@ int main() {
 
     for (int i = 1; i < N - 1; ++i) {
 
-        if (i > 0 && i <= mass_source_nodes) Sm[i] = 1.0;
-        else if (i >= (N - mass_sink_nodes) && i < (N - 1)) Sm[i] = -1.0;
+        if (i > 0 && i <= mass_source_nodes) Sm[i] = -1.0;
+        else if (i >= (N - mass_sink_nodes) && i < (N - 1)) Sm[i] = +1.0;
 
     }
 
@@ -196,12 +196,15 @@ int main() {
     // Loop on timesteps
     for (double it = 0; it < t_iter; it++) {
 
-        const double max_u = *std::max_element(u.begin(), u.end());
+        const double max_abs_u =
+            std::abs(*std::max_element(u.begin(), u.end(),
+                [](double a, double b) { return std::abs(a) < std::abs(b); }
+            ));
         const double min_T = *std::min_element(T.begin(), T.end());
 
         std::cout << "Solving! Time elapsed:" << dt * it << "/" << t_max
-            << ", max courant number: " << max_u * dt / dz
-            << ", max reynolds number: " << max_u * D_pipe * liquid_sodium::rho(min_T) / liquid_sodium::mu(min_T) << "\n";
+            << ", max courant number: " << max_abs_u * dt / dz
+            << ", max reynolds number: " << max_abs_u * D_pipe * liquid_sodium::rho(min_T) / liquid_sodium::mu(min_T) << "\n";
 
         // Backup variables
         T_old = T;
