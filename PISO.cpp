@@ -64,11 +64,11 @@ namespace liquid_sodium {
 
 // =======================================================================
 //
-//                        [SOLVING ALGORITHMS]
+//                        [VARIOUS ALGORITHMS]
 //
 // =======================================================================
 
-#pragma region solver
+#pragma region various_algorithms
 
 // Solves a tridiagonal system Ax = d using the Thomas algorithm
 // a, b, c are the sub-diagonal, main diagonal, and super-diagonal of A
@@ -107,10 +107,9 @@ std::vector<double> linspace(double T_min, double T_max, int N) {
     return T;
 }
 
-// Adaptive time-step that calculates new time step as the smaller between: 
-//      Convective-acoustic limit (CFL number)
+// Adaptive LIQUID time-step that calculates new time step as the smaller between: 
+//      Convective limit (CFL number)
 //      Mass source/sink limit (CS limit)
-//      Pressure correction (CP limit)
 double new_dt(double dz, double dt_old,
     const std::vector<double>& u,
     const std::vector<double>& T,
@@ -157,7 +156,7 @@ int main() {
 	// Geometric parameters
     const double L = 1.0;                // Length of the domain
     const int N = 100;                   // Number of nodes (collocated grid)
-    const double dz = L / (N - 1);       // Distance between nodes
+    const double dz = L / N;       // Distance between nodes
     const double D_pipe = 0.1;           // Pipe diameter [m], used only to estimate Reynolds number
 
     // Physical parameters
