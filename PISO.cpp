@@ -42,6 +42,14 @@ std::vector<double> solveTridiagonal(const std::vector<double>& a,
     return x;
 }
 
+// Initializes vector with equally spaced values between min and max
+std::vector<double> linspace(double T_min, double T_max, int N) {
+    std::vector<double> T(N);
+    double dT = (T_max - T_min) / (N - 1);
+    for (int i = 0; i < N; i++) T[i] = T_min + i * dT;
+    return T;
+}
+
 #pragma endregion
 
 // =======================================================================
