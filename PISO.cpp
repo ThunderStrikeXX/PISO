@@ -50,6 +50,42 @@ std::vector<double> linspace(double T_min, double T_max, int N) {
     return T;
 }
 
+// Adaptive time-step that calculates new time step as the smaller between: 
+//      Convective-acoustic limit (CFL number)
+//      Mass source/sink limit (CS limit)
+//      Pressure correction (CP limit)
+double new_dt(double dz, double dt_old,
+    const std::vector<double>& u,
+    const std::vector<double>& T,
+    const std::vector<double>& rho,
+    const std::vector<double>& Sm) {
+
+    const double CFL = 0.5, CS = 0.5;                           // Limit coefficients
+    const double epsS = 1e-12;                                  // This is to prevent divisions by zero (e.g. if the source is zero)
+    const double theta = 0.9;                                   // Adjusting coefficient for the timestep candidate 
+    const double rdown = 0.2;                                   // Coefficient for damping the timestep correction
+    const double dt_min = 1e-12, dt_max = 1e3;                  // Timestep boundaries [s]
+
+    int N = u.size();
+
+    double dt_cand = dt_max;
+    for (int i = 0; i < N; ++i) {
+
+        // Minimum time step due to CFL
+        double dt_c = CFL * dz / std::abs(u[i]);
+
+        // Minimum time step due to CS limit
+        double dt_s = CS * rho[i] / (std::abs(Sm[i]) + epsS);
+
+        double dti = std::min(dt_c, dt_s);
+        dt_cand = std::min(dt_cand, dti);           // Loop on each node to find the minimum timestep necessary
+    }
+
+    // Timestep lower boundary overrall and damping the correction
+    double dt_new = std::min(dt_max, std::max(dt_min, std::max(theta * dt_cand, rdown * dt_old)));
+    return dt_new;
+}
+
 #pragma endregion
 
 // =======================================================================
@@ -131,14 +167,15 @@ int main() {
     const double T_init = 600;
 
 	// Time-stepping parameters
-	const double dt = 0.1;                                // Timestep [s]
+	double dt = 0.1;                                // Timestep [s]
 	const double t_max = 1000.0;                               // Maximum time [s]
 	const int t_iter = (int)std::round(t_max / dt);         // Number of timesteps
 
     // PISO parameters
-	const int tot_iter = 200;            // Inner iterations per step [-]
-    const int corr_iter = 2;             // PISO correctors per iteration [-]
-	const double tol = 1e-8;             // Tolerance for the inner iterations [-]
+    const int tot_outer_iter = 10000;                   // Outer iterations per time-step [-]
+    const int tot_inner_iter = 50;                      // Inner iterations per outer iteration [-]
+    const double outer_tol = 1e-8;                    // Tolerance for the inner iterations [-]
+    const double inner_tol = 1e-2;                    // Tolerance for the inner iterations [-]
 
     // Initial conditions
     std::vector<double> u(N, -0.001), p(N, 50000.0), T(N, T_init);                   // Collocated grid, values in center-cell
@@ -168,7 +205,6 @@ int main() {
 
         if (i > 0 && i <= mass_source_nodes) Sm[i] = -1.0;
         else if (i >= (N - mass_sink_nodes) && i < (N - 1)) Sm[i] = +1.0;
-
     }
 
     // Momentum source
@@ -204,6 +240,8 @@ int main() {
     // Loop on timesteps
     for (double it = 0; it < t_iter; it++) {
 
+        dt = new_dt(dz, dt, u, T, Sm);
+
         const double max_abs_u =
             std::abs(*std::max_element(u.begin(), u.end(),
                 [](double a, double b) { return std::abs(a) < std::abs(b); }
@@ -218,11 +256,15 @@ int main() {
         T_old = T;
         p_old = p;
 
-        // PISO iterations
-        int iter = 0;
-        double maxErr = 1.0;    
+        // Outer iterations
+        double u_error = 1.0;
+        int outer_iter = 0;
 
-        while (iter<tot_iter && maxErr>tol) {
+        // Inner iterations
+        double p_error;
+        int inner_iter;
+
+        while (outer_iter < tot_outer_iter && u_error > outer_tol) {
 
             // =======================================================================
             //
@@ -275,7 +317,11 @@ int main() {
 
             #pragma endregion
 
-            for (int piso = 0; piso < corr_iter; piso++) {
+            // Inner iterations
+            p_error = 1.0;
+            inner_iter = 0;
+
+            while (inner_iter < tot_inner_iter && p_error > inner_tol) {
 
                 // =======================================================================
                 //
@@ -335,10 +381,14 @@ int main() {
 
                 #pragma region pressure_corrector
 
+                p_error = 0.0;
                 for (int i = 0; i < N; i++) {
 
-                    p[i] += p_prime[i];     // Note that PISO does not require an under-relaxation factor
+                    double p_prev = p[i];
+                    p[i] += p_prime[i]; // Note that PISO does not require an under-relaxation factor
                     p_storage[i + 1] = p[i];
+
+                    p_error = std::max(p_error, std::fabs(p[i] - p_prev));
                 }
 
                 p_storage[0] = p_storage[1];
@@ -365,9 +415,10 @@ int main() {
 
                 #pragma endregion
 
+                inner_iter++;
             }
 
-            iter++;
+            outer_iter++;
         }
 
         // =======================================================================
