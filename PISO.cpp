@@ -7,6 +7,63 @@
 
 // =======================================================================
 //
+//                       [MATERIAL PROPERTIES]
+//
+// =======================================================================
+
+#pragma region liquid_sodium_properties
+
+/**
+ * @brief Provides thermophysical properties for Liquid Sodium (Na).
+ *
+ * This namespace contains constant data and functions to calculate key
+ * temperature-dependent properties of liquid sodium, which is commonly used
+ * as a coolant in fast breeder reactors.
+ * * All functions accept temperature T in **Kelvin [K]** and return values
+ * in standard SI units.
+ */
+namespace liquid_sodium {
+
+    // Critical temperature [K]
+    constexpr double Tcrit = 2509.46;
+
+    // Solidification temperature, gives warning if below
+    constexpr double Tsolid = 370.87;
+
+    // Density [kg/m^3]
+    double rho(double T) {
+
+        if (T < Tsolid) std::cout << "Warning, temperature " << T << " is below solidification temperature!";
+        return 219.0 + 275.32 * (1.0 - T / Tcrit) + 511.58 * pow(1.0 - T / Tcrit, 0.5);
+    }
+
+    // Thermal conductivity [W/(m·K)]
+    double k(double T) {
+
+        if (T < Tsolid) std::cout << "Warning, temperature " << T << " is below solidification temperature!";
+        return 124.67 - 0.11381 * T + 5.5226e-5 * T * T - 1.1842e-8 * T * T * T;
+    }
+
+    // Specific heat [J/(kg·K)]
+    double cp(double T) {
+
+        if (T < Tsolid) std::cout << "Warning, temperature " << T << " is below solidification temperature!";
+        double dXT = T - 273.15;
+        return 1436.72 - 0.58 * dXT + 4.627e-4 * dXT * dXT;
+    }
+
+    // Dynamic viscosity [Pa·s] using Shpilrain et al. correlation, valid for 371 K < T < 2500 K
+    double mu(double T) {
+
+        if (T < Tsolid) std::cout << "Warning, temperature " << T << " is below solidification temperature!";
+        return std::exp(-6.4406 - 0.3958 * std::log(T) + 556.835 / T);
+    }
+}
+
+#pragma endregion
+
+// =======================================================================
+//
 //                        [SOLVING ALGORITHMS]
 //
 // =======================================================================
@@ -57,14 +114,13 @@ std::vector<double> linspace(double T_min, double T_max, int N) {
 double new_dt(double dz, double dt_old,
     const std::vector<double>& u,
     const std::vector<double>& T,
-    const std::vector<double>& rho,
     const std::vector<double>& Sm) {
 
     const double CFL = 0.5, CS = 0.5;                           // Limit coefficients
     const double epsS = 1e-12;                                  // This is to prevent divisions by zero (e.g. if the source is zero)
     const double theta = 0.9;                                   // Adjusting coefficient for the timestep candidate 
     const double rdown = 0.2;                                   // Coefficient for damping the timestep correction
-    const double dt_min = 1e-12, dt_max = 1e3;                  // Timestep boundaries [s]
+    const double dt_min = 1e-12, dt_max = 1e-3;                  // Timestep boundaries [s]
 
     int N = u.size();
 
@@ -75,7 +131,7 @@ double new_dt(double dz, double dt_old,
         double dt_c = CFL * dz / std::abs(u[i]);
 
         // Minimum time step due to CS limit
-        double dt_s = CS * rho[i] / (std::abs(Sm[i]) + epsS);
+        double dt_s = CS * liquid_sodium::rho(T[i]) / (std::abs(Sm[i]) + epsS);
 
         double dti = std::min(dt_c, dt_s);
         dt_cand = std::min(dt_cand, dti);           // Loop on each node to find the minimum timestep necessary
@@ -84,63 +140,6 @@ double new_dt(double dz, double dt_old,
     // Timestep lower boundary overrall and damping the correction
     double dt_new = std::min(dt_max, std::max(dt_min, std::max(theta * dt_cand, rdown * dt_old)));
     return dt_new;
-}
-
-#pragma endregion
-
-// =======================================================================
-//
-//                       [MATERIAL PROPERTIES]
-//
-// =======================================================================
-
-#pragma region liquid_sodium_properties
-
-/**
- * @brief Provides thermophysical properties for Liquid Sodium (Na).
- *
- * This namespace contains constant data and functions to calculate key
- * temperature-dependent properties of liquid sodium, which is commonly used
- * as a coolant in fast breeder reactors.
- * * All functions accept temperature T in **Kelvin [K]** and return values
- * in standard SI units.
- */
-namespace liquid_sodium {
-
-    // Critical temperature [K]
-    constexpr double Tcrit = 2509.46;
-
-    // Solidification temperature, gives warning if below
-    constexpr double Tsolid = 370.87;
-
-    // Density [kg/m^3]
-    double rho(double T) { 
-
-        if (T < Tsolid) std::cout << "Warning, temperature " << T << " is below solidification temperature!";
-        return 219.0 + 275.32 * (1.0 - T / Tcrit) + 511.58 * pow(1.0 - T / Tcrit, 0.5); 
-    }
-
-    // Thermal conductivity [W/(m·K)]
-    double k(double T) { 
-        
-        if (T < Tsolid) std::cout << "Warning, temperature " << T << " is below solidification temperature!";
-        return 124.67 - 0.11381 * T + 5.5226e-5 * T * T - 1.1842e-8 * T * T * T; 
-    }
-
-    // Specific heat [J/(kg·K)]
-    double cp(double T) {
-
-        if (T < Tsolid) std::cout << "Warning, temperature " << T << " is below solidification temperature!";
-        double dXT = T - 273.15;
-        return 1436.72 - 0.58 * dXT + 4.627e-4 * dXT * dXT;
-    }
-
-    // Dynamic viscosity [Pa·s] using Shpilrain et al. correlation, valid for 371 K < T < 2500 K
-    double mu(double T) { 
-        
-        if (T < Tsolid) std::cout << "Warning, temperature " << T << " is below solidification temperature!";
-        return std::exp(-6.4406 - 0.3958 * std::log(T) + 556.835 / T); 
-    }
 }
 
 #pragma endregion
@@ -164,25 +163,25 @@ int main() {
     // Physical parameters
     const double K = 1e-6;              // Permeability [m^2]
 	const double CF = 0.0;              // Forchheimer coefficient [1/m]
-    const double T_init = 600;
+    const double T_init = 600;          // Initial temperature [K
 
 	// Time-stepping parameters
-	double dt = 0.1;                                // Timestep [s]
-	const double t_max = 1000.0;                               // Maximum time [s]
-	const int t_iter = (int)std::round(t_max / dt);         // Number of timesteps
+	double dt = 0.1;                                // Initial value for timestep, then it is adjusted [s]
+	const double t_max = 1000.0;                    // Maximum time [s]
+	const int t_iter = (int)std::round(t_max / dt); // Number of timesteps
 
     // PISO parameters
-    const int tot_outer_iter = 10000;                   // Outer iterations per time-step [-]
-    const int tot_inner_iter = 50;                      // Inner iterations per outer iteration [-]
-    const double outer_tol = 1e-8;                    // Tolerance for the inner iterations [-]
-    const double inner_tol = 1e-2;                    // Tolerance for the inner iterations [-]
+    const int tot_outer_iter = 10000;                 // Outer iterations per time-step [-]
+    const int tot_inner_iter = 50;                    // Inner iterations per outer iteration [-]
+    const double outer_tol = 1e-6;                    // Tolerance for the inner iterations [-]
+    const double inner_tol = 1e-4;                    // Tolerance for the inner iterations [-]
 
     // Initial conditions
-    std::vector<double> u(N, -0.001), p(N, 50000.0), T(N, T_init);                   // Collocated grid, values in center-cell
-    std::vector<double> p_storage(N + 2, 50000.0);                                  // Storage for ghost nodes at the boundaries
-    double* p_padded = &p_storage[1];                                               // Poìnter to work on the storage with the same indes
+    std::vector<double> u(N, -0.001), p(N, 50000.0), T(N, T_init);  // Collocated grid, values in center-cell
+    std::vector<double> p_storage(N + 2, 50000.0);                  // Storage for ghost nodes at the boundaries
+    double* p_padded = &p_storage[1];                               // Poìnter to work on the storage with the same indes
     std::vector<double> T_old(N, T_init), p_old(N, 50000.0);        // Backup values
-    std::vector<double> p_prime(N, 0.0);                                            // Pressure correction
+    std::vector<double> p_prime(N, 0.0);                            // Pressure correction
 
     // Boundary conditions (Dirichlet p at outlet, T at both ends, u inlet)
     const double u_inlet = 0.0;             // Inlet velocity [m/s]
@@ -221,8 +220,8 @@ int main() {
 
     for (int i = 1; i < N - 1; ++i) {
 
-        if (i > 0 && i <= energy_source_nodes) St[i] = 1000000.0;
-        else if (i >= (N - energy_sink_nodes) && i < (N - 1)) St[i] = -1000000.0;
+        if (i > 0 && i <= energy_source_nodes) St[i] = 10000.0;
+        else if (i >= (N - energy_sink_nodes) && i < (N - 1)) St[i] = -10000.0;
 
     }
 
@@ -230,7 +229,7 @@ int main() {
     const int rhie_chow_on_off = 1;  // 0: no RC correction, 1: with RC correction
 
     // The coefficient bU is needed in momentum predictor loop and pressure correction to estimate the velocities at the faces using the Rhie and Chow correction
-    std::vector<double> aU(N, 0.0), bU(N, liquid_sodium::rho(T_init) * dz / dt + 2 * liquid_sodium::mu(T_init) / dz), cU(N, 0.0), dU(N, 0.0);
+    std::vector<double> aXU(N, 0.0), bXU(N, liquid_sodium::rho(T_init) * dz / dt + 2 * liquid_sodium::mu(T_init) / dz), cXU(N, 0.0), dXU(N, 0.0);
 
     #pragma endregion
 
@@ -288,8 +287,8 @@ int main() {
                 const double D_l = 0.5 * (mu_P + mu_L) / dz;
                 const double D_r = 0.5 * (mu_P + mu_R) / dz;
 
-                const double rhie_chow_l = -(1.0 / bU[i - 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
-                const double rhie_chow_r = -(1.0 / bU[i + 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
+                const double rhie_chow_l = -(1.0 / bXU[i - 1] + 1.0 / bXU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
+                const double rhie_chow_r = -(1.0 / bXU[i + 1] + 1.0 / bXU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
 
                 const double u_l_face = 0.5 * (u[i - 1] + u[i]) + rhie_chow_on_off * rhie_chow_l;
                 const double u_r_face = 0.5 * (u[i] + u[i + 1]) + rhie_chow_on_off * rhie_chow_r;
@@ -300,20 +299,20 @@ int main() {
                 const double F_l = rho_l * u_l_face;
                 const double F_r = rho_r * u_r_face;
 
-                aU[i] = -std::max(F_l, 0.0) - D_l;
-                cU[i] = -std::max(-F_r, 0.0) - D_r;
-                bU[i] = (std::max(F_r, 0.0) + std::max(-F_l, 0.0)) + rho_P * dz / dt + D_l + D_r + mu_P / K * dz + CF * mu_P * dz / sqrt(K) * abs(u[i]);
-                dU[i] = -0.5 * (p[i + 1] - p[i - 1]) + rho_P * u[i] * dz / dt + Su[i] * dz;
+                aXU[i] = -std::max(F_l, 0.0) - D_l;
+                cXU[i] = -std::max(-F_r, 0.0) - D_r;
+                bXU[i] = (std::max(F_r, 0.0) + std::max(-F_l, 0.0)) + rho_P * dz / dt + D_l + D_r + mu_P / K * dz + CF * mu_P * dz / sqrt(K) * abs(u[i]);
+                dXU[i] = -0.5 * (p[i + 1] - p[i - 1]) + rho_P * u[i] * dz / dt + Su[i] * dz;
             }
 
             // Velocity BC: Dirichlet at l, dirichlet at r
             const double D_first = liquid_sodium::mu(T[0]) / dz;
             const double D_last = liquid_sodium::mu(T[N - 1]) / dz;
 
-            bU[0] = (liquid_sodium::rho(T[0]) * dz / dt + 2 * D_first); cU[0] = 0.0; dU[0] = (liquid_sodium::rho(T[0]) * dz / dt + 2 * D_first) * u_inlet;
-            aU[N - 1] = 0.0; bU[N - 1] = (liquid_sodium::rho(T[N - 1]) * dz / dt + 2 * D_last); dU[N - 1] = (liquid_sodium::rho(T[N - 1]) * dz / dt + 2 * D_last) * u_outlet;
+            bXU[0] = (liquid_sodium::rho(T[0]) * dz / dt + 2 * D_first); cXU[0] = 0.0; dXU[0] = (liquid_sodium::rho(T[0]) * dz / dt + 2 * D_first) * u_inlet;
+            aXU[N - 1] = 0.0; bXU[N - 1] = (liquid_sodium::rho(T[N - 1]) * dz / dt + 2 * D_last); dXU[N - 1] = (liquid_sodium::rho(T[N - 1]) * dz / dt + 2 * D_last) * u_outlet;
 
-            u = solveTridiagonal(aU, bU, cU, dU);
+            u = solveTridiagonal(aXU, bXU, cXU, dXU);
 
             #pragma endregion
 
@@ -331,7 +330,7 @@ int main() {
 
                 #pragma region continuity_satisfactor
 
-                std::vector<double> aP(N, 0.0), bP(N, 0.0), cP(N, 0.0), dP(N, 0.0);
+                std::vector<double> aXP(N, 0.0), bXP(N, 0.0), cXP(N, 0.0), dXP(N, 0.0);
 
                 #pragma omp parallel for
                 for (int i = 1; i < N - 1; i++) {
@@ -340,15 +339,15 @@ int main() {
                     const double rho_L = liquid_sodium::rho(T[i - 1]);
                     const double rho_R = liquid_sodium::rho(T[i + 1]);
 
-                    const double rhie_chow_l = -(1.0 / bU[i - 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
-                    const double rhie_chow_r = -(1.0 / bU[i + 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
+                    const double rhie_chow_l = -(1.0 / bXU[i - 1] + 1.0 / bXU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
+                    const double rhie_chow_r = -(1.0 / bXU[i + 1] + 1.0 / bXU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
 
                     const double rho_l = 0.5 * (rho_L + rho_P);
-                    const double d_l_face = 0.5 * (1.0 / bU[i - 1] + 1.0 / bU[i]); // 1/Ap average on west face
+                    const double d_l_face = 0.5 * (1.0 / bXU[i - 1] + 1.0 / bXU[i]); // 1/Ap average on west face
                     const double E_l = rho_l * d_l_face / dz;
 
                     const double rho_r = 0.5 * (rho_P + rho_R);
-                    const double d_r_face = 0.5 * (1.0 / bU[i] + 1.0 / bU[i + 1]);  // 1/Ap average on east face
+                    const double d_r_face = 0.5 * (1.0 / bXU[i] + 1.0 / bXU[i + 1]);  // 1/Ap average on east face
                     const double E_r = rho_r * d_r_face / dz;
 
                     const double u_l_star = 0.5 * (u[i - 1] + u[i]) + rhie_chow_on_off * rhie_chow_l;
@@ -359,17 +358,17 @@ int main() {
 
                     const double mass_imbalance = (mdot_r_star - mdot_l_star);
 
-                    aP[i] = -E_l;
-                    cP[i] = -E_r;
-                    bP[i] = E_l + E_r;          // No compressibility term
-                    dP[i] = Sm[i] * dz - mass_imbalance;
+                    aXP[i] = -E_l;
+                    cXP[i] = -E_r;
+                    bXP[i] = E_l + E_r;          // No compressibility term
+                    dXP[i] = Sm[i] * dz - mass_imbalance;
                 }
 
                 // BCs for p': zero gradient aVT inlet and zero correction aVT outlet
-                bP[0] = 1.0; cP[0] = -1.0; dP[0] = 0.0;
-                bP[N - 1] = 1.0; aP[N - 1] = 0.0; dP[N - 1] = 0.0;
+                bXP[0] = 1.0; cXP[0] = -1.0; dXP[0] = 0.0;
+                bXP[N - 1] = 1.0; aXP[N - 1] = 0.0; dXP[N - 1] = 0.0;
 
-                p_prime = solveTridiagonal(aP, bP, cP, dP);
+                p_prime = solveTridiagonal(aXP, bXP, cXP, dXP);
 
                 #pragma endregion
 
@@ -404,13 +403,13 @@ int main() {
 
                 #pragma region velocity_corrector
 
-                maxErr = 0.0;
+                u_error = 0.0;
                 for (int i = 1; i < N - 1; i++) {
 
                     double u_prev = u[i];
-                    u[i] = u[i] - (p_prime[i + 1] - p_prime[i - 1]) / (2.0 * dz * bU[i]);
+                    u[i] = u[i] - (p_prime[i + 1] - p_prime[i - 1]) / (2.0 * dz * bXU[i]);
 
-                    maxErr = std::max(maxErr, std::fabs(u[i] - u_prev));
+                    u_error = std::max(u_error, std::fabs(u[i] - u_prev));
                 }
 
                 #pragma endregion
@@ -452,8 +451,8 @@ int main() {
             const double D_l = 0.5 * (k_cond_P + k_cond_L) / dz;
             const double D_r = 0.5 * (k_cond_P + k_cond_R) / dz;
 
-            const double rhie_chow_l = -(1.0 / bU[i - 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
-            const double rhie_chow_r = -(1.0 / bU[i + 1] + 1.0 / bU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
+            const double rhie_chow_l = -(1.0 / bXU[i - 1] + 1.0 / bXU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
+            const double rhie_chow_r = -(1.0 / bXU[i + 1] + 1.0 / bXU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
 
             const double u_l_face = 0.5 * (u[i - 1] + u[i]) + rhie_chow_on_off * rhie_chow_l;
             const double u_r_face = 0.5 * (u[i] + u[i + 1]) + rhie_chow_on_off * rhie_chow_r;
