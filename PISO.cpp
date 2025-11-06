@@ -201,8 +201,8 @@ int main() {
 
     for (int i = 1; i < N - 1; ++i) {
 
-        if (i > 0 && i <= mass_source_nodes) Sm[i] = -1.0;
-        else if (i >= (N - mass_sink_nodes) && i < (N - 1)) Sm[i] = +1.0;
+        if (i > 0 && i <= mass_source_nodes) Sm[i] = 1.0;
+        else if (i >= (N - mass_sink_nodes) && i < (N - 1)) Sm[i] = -1.0;
     }
 
     // Momentum source
@@ -286,8 +286,11 @@ int main() {
                 const double D_l = 0.5 * (mu_P + mu_L) / dz;
                 const double D_r = 0.5 * (mu_P + mu_R) / dz;
 
-                const double rhie_chow_l = -(1.0 / bXU[i - 1] + 1.0 / bXU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
-                const double rhie_chow_r = -(1.0 / bXU[i + 1] + 1.0 / bXU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
+                const double d_l_face = 0.5 * (1.0 / bXU[i - 1] + 1.0 / bXU[i]) / dz; // 1/Ap average on west face
+                const double d_r_face = 0.5 * (1.0 / bXU[i] + 1.0 / bXU[i + 1]) / dz;  // 1/Ap average on east face
+
+                const double rhie_chow_l = -d_l_face / 4 * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
+                const double rhie_chow_r = -d_r_face / 4 * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
 
                 const double u_l_face = 0.5 * (u[i - 1] + u[i]) + rhie_chow_on_off * rhie_chow_l;
                 const double u_r_face = 0.5 * (u[i] + u[i + 1]) + rhie_chow_on_off * rhie_chow_r;
@@ -301,7 +304,7 @@ int main() {
                 aXU[i] = -std::max(F_l, 0.0) - D_l;
                 cXU[i] = -std::max(-F_r, 0.0) - D_r;
                 bXU[i] = (std::max(F_r, 0.0) + std::max(-F_l, 0.0)) + rho_P * dz / dt + D_l + D_r + mu_P / K * dz + CF * mu_P * dz / sqrt(K) * abs(u[i]);
-                dXU[i] = -0.5 * (p[i + 1] - p[i - 1]) + rho_P * u[i] * dz / dt + Su[i] * dz;
+                dXU[i] = -0.5 * (p[i + 1] - p[i - 1]) + rho_P * u[i] * dz / dt /* + Su[i] * dz */;
             }
 
             // Velocity BC: Dirichlet at l, dirichlet at r
@@ -338,16 +341,17 @@ int main() {
                     const double rho_L = liquid_sodium::rho(T[i - 1]);
                     const double rho_R = liquid_sodium::rho(T[i + 1]);
 
-                    const double rhie_chow_l = -(1.0 / bXU[i - 1] + 1.0 / bXU[i]) / (8 * dz) * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
-                    const double rhie_chow_r = -(1.0 / bXU[i + 1] + 1.0 / bXU[i]) / (8 * dz) * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
+                    const double d_l_face = 0.5 * (1.0 / bXU[i - 1] + 1.0 / bXU[i]) / dz; // 1/Ap average on west face
+                    const double d_r_face = 0.5 * (1.0 / bXU[i] + 1.0 / bXU[i + 1]) / dz;  // 1/Ap average on east face
+
+                    const double rhie_chow_l = -d_l_face/ 4 * (p_padded[i - 2] - 3 * p_padded[i - 1] + 3 * p_padded[i] - p_padded[i + 1]);
+                    const double rhie_chow_r = -d_r_face / 4 * (p_padded[i - 1] - 3 * p_padded[i] + 3 * p_padded[i + 1] - p_padded[i + 2]);
 
                     const double rho_l = 0.5 * (rho_L + rho_P);
-                    const double d_l_face = 0.5 * (1.0 / bXU[i - 1] + 1.0 / bXU[i]); // 1/Ap average on west face
-                    const double E_l = rho_l * d_l_face / dz;
+                    const double E_l = rho_l * d_l_face;
 
                     const double rho_r = 0.5 * (rho_P + rho_R);
-                    const double d_r_face = 0.5 * (1.0 / bXU[i] + 1.0 / bXU[i + 1]);  // 1/Ap average on east face
-                    const double E_r = rho_r * d_r_face / dz;
+                    const double E_r = rho_r * d_r_face;
 
                     const double u_l_star = 0.5 * (u[i - 1] + u[i]) + rhie_chow_on_off * rhie_chow_l;
                     const double mdot_l_star = (u_l_star > 0.0) ? rho_L * u_l_star : rho_P * u_l_star;
