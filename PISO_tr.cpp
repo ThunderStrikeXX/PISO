@@ -160,20 +160,20 @@ int main() {
     const double D_pipe = 0.1;           // Pipe diameter [m], used only to estimate Reynolds number
 
     // Physical parameters
-    const double K = 1e-6;              // Permeability [m^2]
-	const double CF = 0.0;              // Forchheimer coefficient [1/m]
+    const double K = 1e-10;              // Permeability [m^2]
+	const double CF = 1e5;              // Forchheimer coefficient [1/m]
     const double T_init = 600;          // Initial temperature [K
 
 	// Time-stepping parameters
 	double dt = 0.1;                                // Initial value for timestep, then it is adjusted [s]
-	const double t_max = 1000.0;                    // Maximum time [s]
+	const double t_max = 100.0;                    // Maximum time [s]
 	const int t_iter = (int)std::round(t_max / dt); // Number of timesteps
 
     // PISO parameters
-    const int tot_outer_iter = 10000;                 // Outer iterations per time-step [-]
-    const int tot_inner_iter = 50;                    // Inner iterations per outer iteration [-]
+    const int tot_outer_iter = 2000;                 // Outer iterations per time-step [-]
+    const int tot_inner_iter = 100;                    // Inner iterations per outer iteration [-]
     const double outer_tol = 1e-6;                    // Tolerance for the inner iterations [-]
-    const double inner_tol = 1e-4;                    // Tolerance for the inner iterations [-]
+    const double inner_tol = 1e-6;                    // Tolerance for the inner iterations [-]
 
     // Initial conditions
     std::vector<double> u(N, -0.001), p(N, 50000.0), T(N, T_init);  // Collocated grid, values in center-cell
@@ -201,27 +201,70 @@ int main() {
 
     for (int i = 1; i < N - 1; ++i) {
 
-        if (i > 0 && i <= mass_source_nodes) Sm[i] = 1.0;
-        else if (i >= (N - mass_sink_nodes) && i < (N - 1)) Sm[i] = -1.0;
+        if (i > 0 && i <= mass_source_nodes) Sm[i] = 100.0;
+        else if (i >= (N - mass_sink_nodes) && i < (N - 1)) Sm[i] = -100.0;
     }
 
     // Momentum source
     std::vector<double> Su(N, 0.0);
 
-    // Energy source
-    std::vector<double> St(N, 0.0);
+    // Source term
+    std::vector<double> St(N);
 
-    const double energy_source_zone = 0.2;
-    const double energy_sink_zone = 0.2;
+    double const M_PI = 3.14159265358979323846;
+    double const h_conv = 10000.0;              // [W/m^2K]
+    double const emissivity = 0.8;              // [-]
+    double const T_env = 200.0;                 // [K]
+    double const sigma = 5.670374419e-8;        // [W/m^2K^4]
+    double const condenser_length = 0.2;        // [m]
+    double const evaporator_start = 0.2;        // [m]
+    double const evaporator_end = 0.3;          // [m]
+    double const r_o = 0.01;                    // [m]
+    double const power = 100000.0;              // [W]
 
-    const double energy_source_nodes = std::floor(N * energy_source_zone);
-    const double energy_sink_nodes = std::floor(N * energy_sink_zone);
+    static std::vector<double> z(N);
+    for (int j = 0; j < N; ++j) z[j] = (j + 0.5) * dz;
 
-    for (int i = 1; i < N - 1; ++i) {
+    std::vector<double> q_raw(N, 0.0);
 
-        if (i > 0 && i <= energy_source_nodes) St[i] = 10000.0;
-        else if (i >= (N - energy_sink_nodes) && i < (N - 1)) St[i] = -10000.0;
+    // Evaporator
+    const double Lh = evaporator_end - evaporator_start;
+    const double delta_h = 0.01;
+    const double Lh_eff = Lh + delta_h;
+    const double q0 = power / (2.0 * M_PI * r_o * Lh_eff);      // [W/m^2]
 
+    // Condenser
+    const double delta_c = 0.05;
+    const double condenser_start = L - condenser_length;
+    const double condenser_end = L;
+
+    for (int j = 0; j < N; ++j) {
+        const double zj = z[j];
+
+        if (zj >= (evaporator_start - delta_h) && zj < evaporator_start) {
+            double x = (zj - (evaporator_start - delta_h)) / delta_h;
+            St[j] = 0.5 * q0 * (1.0 - std::cos(M_PI * x));
+        }
+        else if (zj >= evaporator_start && zj <= evaporator_end) {
+            St[j] = q0;
+        }
+        else if (zj > evaporator_end && zj <= (evaporator_end + delta_h)) {
+            double x = (zj - evaporator_end) / delta_h;
+            St[j] = 0.5 * q0 * (1.0 + std::cos(M_PI * x));
+        }
+
+        double conv = h_conv * (T[j] - T_env);          // [W/m^2]
+        double irr = emissivity * sigma *
+            (std::pow(T[j], 4) - std::pow(T_env, 4));   // [W/m^2]
+
+        if (zj >= condenser_start && zj < condenser_start + delta_c) {
+            double x = (zj - condenser_start) / delta_c;
+            double w = 0.5 * (1.0 - std::cos(M_PI * x));
+            St[j] = - (conv + irr) * w;
+        }
+        else if (zj >= condenser_start + delta_c) {
+            St[j] = -(conv + irr);
+        }
     }
 
     // Models
@@ -448,8 +491,6 @@ int main() {
             const double cp_L = liquid_sodium::cp(T[i - 1]);
             const double cp_R = liquid_sodium::cp(T[i + 1]);
 
-            const double rhoCp_dzdt = rho_P * cp_P * dz / dt;
-
             // Linear interpolation diffusion coefficient
             const double D_l = 0.5 * (k_cond_P + k_cond_L) / dz;
             const double D_r = 0.5 * (k_cond_P + k_cond_R) / dz;
@@ -474,11 +515,22 @@ int main() {
             const double C_l = (Fl * cp_l);
             const double C_r = (Fr * cp_r);
 
-            aXT[i] = -D_l - std::max(C_l, 0.0);
-            cXT[i] = -D_r - std::max(-C_r, 0.0);
-            bXT[i] = (std::max(C_r, 0.0) + std::max(-C_l, 0.0)) + D_l + D_r + rhoCp_dzdt;
+            aXT[i] = 
+                - D_l 
+                - std::max(C_l, 0.0);
+            cXT[i] = 
+                -D_r 
+                - std::max(-C_r, 0.0);
+            bXT[i] = 
+                + std::max(C_r, 0.0) 
+                + std::max(-C_l, 0.0) 
+                + D_l + D_r 
+                + rho_P * cp_P * dz / dt;
 
-            dXT[i] = rhoCp_dzdt * T_old[i] + St[i] * dz;
+            dXT[i] =
+                + rho_P * cp_P * dz / dt * T_old[i]
+                + St[i] * dz
+				+ Sm[i] * 1e4; // Fictitious heat source due to evaporation/condensation
         }
 
         // Temperature BCs
