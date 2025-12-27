@@ -1,0 +1,64 @@
+# ---------------- MESH ----------------
+N = 201
+L = 1.0
+
+# ---------------- TIME ----------------
+dt_user = 1e-3
+simulation_time = 1.0
+
+# ---------------- PICARD --------------
+picard_max_iter = 100
+picard_tol = 1e-8
+
+# ---------------- PISO ----------------
+piso_outer_iter = 200
+piso_inner_iter = 200
+piso_outer_tol = 1e-8
+piso_inner_tol = 1e-8
+rhie_chow = 1
+
+# ---------------- FLUID ---------------
+rho = 1000.0
+mu = 1e-5
+alpha = 1e-2
+
+# ---------------- SOURCES -------------
+S_m_cell = 1.0
+S_h_cell = 0.0
+
+z_evap_start = 0.0
+z_evap_end   = 0.3
+z_cond_start = 0.7
+z_cond_end   = 1.0
+
+# -------- ICs --------
+u_initial = 0.0
+T_initial = 300.0
+p_initial = 0.0
+
+# -------- VELOCITY BCs ----------
+u_inlet_bc    = 0
+u_inlet_value = 0.0
+
+u_outlet_bc    = 0
+u_outlet_value = 0.0
+
+# -------- TEMPERATURE BCs -------
+T_inlet_bc    = 0
+T_inlet_value = 300.0
+
+T_outlet_bc    = 1
+T_outlet_value = 0.0
+
+# -------- PRESSURE BCs ----------
+p_inlet_bc    = 1
+p_inlet_value = 0.0
+
+p_outlet_bc    = 0
+p_outlet_value = 0.0
+
+# ---------------- OUTPUT --------------
+number_output = 10
+velocity_file = velocity.dat
+pressure_file = pressure.dat
+temperature_file = temperature.dat
