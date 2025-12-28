@@ -257,8 +257,15 @@ int main() {
 	std::vector<double> T_l_iter(N, 0.0);                               // Temperature field for Picard iteration [K]
 
 	std::vector<double> p_prime_l(N, 0.0);                              // Pressure correction [Pa]
-	std::vector<double> p_storage_l(N + 2, 0.0);                        // Padded pressure storage for Rhie–Chow [Pa]
+	std::vector<double> p_storage_l(N + 2);                             // Padded pressure storage for Rhie–Chow [Pa]
 	double* p_padded_l = &p_storage_l[1];                               // Pointer to the real nodes of the padded pressure storage [Pa]
+
+	// p_storage_l initialization
+    for (int i = 0; i < N; ++i)
+        p_storage_l[i + 1] = p_l[i];
+
+    p_storage_l[0] = p_l[0];
+    p_storage_l[N + 1] = p_l[N - 1];
 
 	std::vector<double> u_prev(N, 0.0);                                 // Previous iteration velocity for convergence check [m/s]
 	std::vector<double> p_prev(N, 0.0);                                 // Previous iteration pressure for convergence check [Pa]
