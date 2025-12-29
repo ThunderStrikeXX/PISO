@@ -7,6 +7,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <filesystem>
+#include <omp.h>
 
 #include "tdma.h"
 
@@ -335,6 +336,8 @@ int main() {
     std::ofstream v_out(outputDir / in.velocity_file);              // Velocity output file
     std::ofstream p_out(outputDir / in.pressure_file);              // Pressure output file
     std::ofstream T_out(outputDir / in.temperature_file);           // Temperature output file
+
+    double start = omp_get_wtime();
 
 	// Time-stepping loop
     for (int n = 0; n <= time_steps; ++n) {
@@ -717,6 +720,9 @@ int main() {
     v_out.close();
     p_out.close();
     T_out.close();
+
+    double end = omp_get_wtime();
+    printf("Execution time: %.6f s\n", end - start);
 
     return 0;
 }
