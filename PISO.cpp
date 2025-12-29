@@ -544,12 +544,12 @@ int main() {
                         p_storage_l[0] = p_storage_l[1];
                     }
 
-                    if (p_inlet_bc == 0) {                              // Dirichlet BC
+                    if (p_outlet_bc == 0) {                              // Dirichlet BC
 
 						p_l[N - 1] = p_outlet_value;
                         p_storage_l[N + 1] = p_outlet_value;
                     }
-                    else if (u_inlet_bc == 1) {                         // Neumann BC
+                    else if (p_outlet_bc == 1) {                         // Neumann BC
 
 						p_l[N - 1] = p_l[N - 2];
                         p_storage_l[N + 1] = p_storage_l[N];
