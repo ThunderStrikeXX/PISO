@@ -371,7 +371,6 @@ int main() {
 
             momentum_residual = 1.0;
 
-            // while (outer_l < tot_outer_l && u_error_l > outer_tol_l) {
             while (outer_l < tot_outer_l && momentum_residual > outer_tol_l) {
 
                 // ===========================================================
@@ -461,7 +460,6 @@ int main() {
 
                 continuity_residual = 1.0;
 
-                // while (inner_l < tot_inner_l && p_error_l > inner_tol_l) {
                 while (inner_l < tot_inner_l && continuity_residual > inner_tol_l) {
 
                     // -------------------------------------------------------
@@ -590,11 +588,13 @@ int main() {
 					// CONTINUITY RESIDUAL CALCULATION
                     // -------------------------------------------------------
 
+                    /*
                     continuity_residual = 0.0;
 
                     for (int i = 1; i < N - 1; ++i) {
                         continuity_residual = std::max(continuity_residual, std::fabs(dLP[i]));
                     }
+                    */
 
                     inner_l++;
                 }
