@@ -337,6 +337,17 @@ int main() {
     std::ofstream p_out(outputDir / in.pressure_file);              // Pressure output file
     std::ofstream T_out(outputDir / in.temperature_file);           // Temperature output file
 
+    // Convergence metrics
+	double continuity_residual = 1.0;
+    double momentum_residual = 1.0;
+
+    double u_error_l = 1.0;
+    int outer_l = 0;
+
+    double p_error_l = 1.0;
+    double rho_error_l = 1.0;
+    int inner_l = 0;
+
     double start = omp_get_wtime();
 
 	// Time-stepping loop
@@ -355,10 +366,13 @@ int main() {
             // Iter = new for Picard
             T_l_iter = T_l;
 
-            double u_error_l = 1.0;
-            int outer_l = 0;
+            u_error_l = 1.0;
+            outer_l = 0;
 
-            while (outer_l < tot_outer_l && u_error_l > outer_tol_l) {
+            momentum_residual = 1.0;
+
+            // while (outer_l < tot_outer_l && u_error_l > outer_tol_l) {
+            while (outer_l < tot_outer_l && momentum_residual > outer_tol_l) {
 
                 // ===========================================================
                 // MOMENTUM PREDICTOR
@@ -441,12 +455,14 @@ int main() {
 
                 u_l = tdma::solve(aLU, bLU, cLU, dLU);
 
-                double p_error_l = 1.0;
-                int inner_l = 0;
+                rho_error_l = 1.0;
+                p_error_l = 1.0;
+                inner_l = 0;
 
-                double rho_error_l = 1.0;
+                continuity_residual = 1.0;
 
-                while (inner_l < tot_inner_l && p_error_l > inner_tol_l) {
+                // while (inner_l < tot_inner_l && p_error_l > inner_tol_l) {
+                while (inner_l < tot_inner_l && continuity_residual > inner_tol_l) {
 
                     // -------------------------------------------------------
                     // CONTINUITY SATISFACTOR: assemble pressure correction
@@ -488,7 +504,7 @@ int main() {
                             + E_r
                             ;               /// [s/m]
 
-                        dLP[i] = +mass_flux - mass_imbalance;  /// [kg/(m2s)]
+                        dLP[i] = + mass_flux - mass_imbalance;  /// [kg/(m2s)]
                     }
 
                     // BCs on p_prime
@@ -570,7 +586,27 @@ int main() {
                         u_error_l = std::max(u_error_l, std::fabs(u_l[i] - u_prev[i]));
                     }
 
+                    // -------------------------------------------------------
+					// CONTINUITY RESIDUAL CALCULATION
+                    // -------------------------------------------------------
+
+                    continuity_residual = 0.0;
+
+                    for (int i = 1; i < N - 1; ++i) {
+                        continuity_residual = std::max(continuity_residual, std::fabs(aLP[i] * p_prime_l[i - 1] + bLP[i] * p_prime_l[i] + cLP[i] * p_prime_l[i + 1] - dLP[i]));
+                    }
+
                     inner_l++;
+                }
+
+                // -------------------------------------------------------
+                // MOMENTUM RESIDUAL CALCULATION
+                // -------------------------------------------------------
+
+                momentum_residual = 0.0;
+
+                for (int i = 1; i < N - 1; ++i) {
+                    momentum_residual = std::max(momentum_residual, std::fabs(aLU[i] * u_l[i - 1] + bLU[i] * u_l[i] + cLU[i] * u_l[i + 1] - dLU[i]));
                 }
 
                 outer_l++;
