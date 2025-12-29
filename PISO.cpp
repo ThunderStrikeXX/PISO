@@ -588,13 +588,11 @@ int main() {
 					// CONTINUITY RESIDUAL CALCULATION
                     // -------------------------------------------------------
 
-                    /*
                     continuity_residual = 0.0;
 
                     for (int i = 1; i < N - 1; ++i) {
                         continuity_residual = std::max(continuity_residual, std::fabs(dLP[i]));
                     }
-                    */
 
                     inner_l++;
                 }
