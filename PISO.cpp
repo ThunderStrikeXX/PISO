@@ -593,7 +593,7 @@ int main() {
                     continuity_residual = 0.0;
 
                     for (int i = 1; i < N - 1; ++i) {
-                        continuity_residual = std::max(continuity_residual, std::fabs(aLP[i] * p_prime_l[i - 1] + bLP[i] * p_prime_l[i] + cLP[i] * p_prime_l[i + 1] - dLP[i]));
+                        continuity_residual = std::max(continuity_residual, std::fabs(dLP[i]));
                     }
 
                     inner_l++;
