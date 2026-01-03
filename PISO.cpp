@@ -222,17 +222,13 @@ int main() {
 	const int print_every = time_steps / number_output;                 // Print output every n time steps [-]
 
 	double time_total = 0.0;                                            // Total simulation time [s]
+    double dt = dt_user;                                                // Time step [s]
 
 	const int tot_outer_l = in.piso_outer_iter;                         // PISO outer iterations [-]
 	const int tot_inner_l = in.piso_inner_iter;                         // PISO inner iterations [-]
 	const double outer_tol_l = in.piso_outer_tol;                       // PISO outer tolerance [-]
 	const double inner_tol_l = in.piso_inner_tol;                       // PISO inner tolerance [-]
 	const bool rhie_chow_on_off_l = in.rhie_chow_on_off_l;              // Rhie–Chow interpolation on/off (1/0) [-]
-
-	int halves = 0;                                                     // Number of halvings of the time step [-]
-	double L1 = 0.0;                                                    // Picard error [-]
-    double dt = dt_user;            // Time step [s]
-    int pic = 0;                    // Picard iteration counter [-]
 
 	const double rho_l = in.rho;                                        // Density [kg/m3]
 	const double mu = in.mu;                                            // Dynamic viscosity [kg/(m s)]
@@ -571,6 +567,22 @@ int main() {
 				// CONTINUITY RESIDUAL CALCULATION
                 // -------------------------------------------------------
 
+                double phi_ref = 0.0;
+                double Sm_ref = 0.0;
+
+                for (int i = 1; i < N - 1; ++i) {
+
+                    const double u_l_face = 0.5 * (u_l[i - 1] + u_l[i]);
+                    const double u_r_face = 0.5 * (u_l[i] + u_l[i + 1]);
+
+                    phi_ref = std::max(phi_ref, rho_l * std::abs(u_l_face));
+                    phi_ref = std::max(phi_ref, rho_l * std::abs(u_r_face));
+
+                    Sm_ref = std::max(Sm_ref, std::abs(S_m[i] * dz));
+                }
+
+                const double cont_ref = std::max({ phi_ref, Sm_ref, 1e-30 });
+
                 continuity_residual = 0.0;
 
                 for (int i = 1; i < N - 1; ++i) {
@@ -586,14 +598,16 @@ int main() {
                     const double u_l_star = 0.5 * (u_l[i - 1] + u_l[i]) + rhie_chow_on_off_l * rc_l;    // [m/s]
                     const double u_r_star = 0.5 * (u_l[i] + u_l[i + 1]) + rhie_chow_on_off_l * rc_r;    // [m/s]
 
-                    const double phi_l = rho_l * u_l_star;   // [kg/(m2s)]
-                    const double phi_r = rho_l * u_r_star;   // [kg/(m2s)]
+                    const double phi_l = rho_l * u_l_star;          // [kg/(m2s)]
+                    const double phi_r = rho_l * u_r_star;          // [kg/(m2s)]
 
                     const double mass_imbalance = (phi_r - phi_l);  // [kg/(m2s)]
 
-                    const double mass_flux = S_m[i] * dz;         // [kg/(m2s)]
+                    const double mass_flux = S_m[i] * dz;           // [kg/(m2s)]
 
-                    continuity_residual = std::max(continuity_residual, std::fabs(mass_flux - mass_imbalance));
+                    continuity_residual =
+                        std::max(continuity_residual,
+                            std::abs(mass_flux - mass_imbalance) / cont_ref);
                 }
 
                 inner_l++;
@@ -603,10 +617,64 @@ int main() {
             // MOMENTUM RESIDUAL CALCULATION
             // -------------------------------------------------------
 
+            double U_ref = 0.0;
+			double F_ref = 0.0;
+
+            for (int i = 0; i < N; ++i) {
+
+                U_ref = std::max(U_ref, std::abs(u_l[i]));
+            }
+
+            for (int i = 0; i < N; ++i) {
+                const double F_inertia = rho_l * U_ref * U_ref;
+                const double F_unsteady = rho_l * U_ref * dz / dt;
+                const double F_viscous = mu * U_ref / dz;
+
+                F_ref = std::max({ F_inertia, F_unsteady, F_viscous, 1e-30 });
+
+            }
+
             momentum_residual = 0.0;
 
             for (int i = 1; i < N - 1; ++i) {
-                momentum_residual = std::max(momentum_residual, std::fabs(aLU[i] * u_l[i - 1] + bLU[i] * u_l[i] + cLU[i] * u_l[i + 1] - dLU[i]));
+
+                const double avgInvbLU_L = 0.5 * (1.0 / bLU[i - 1] + 1.0 / bLU[i]);     // [m2s/kg]
+                const double avgInvbLU_R = 0.5 * (1.0 / bLU[i + 1] + 1.0 / bLU[i]);     // [m2s/kg]
+
+                const double rc_l = -avgInvbLU_L / 4.0 *
+                    (p_padded_l[i - 2] - 3.0 * p_padded_l[i - 1] + 3.0 * p_padded_l[i] - p_padded_l[i + 1]);    // [m/s]
+                const double rc_r = -avgInvbLU_R / 4.0 *
+                    (p_padded_l[i - 1] - 3.0 * p_padded_l[i] + 3.0 * p_padded_l[i + 1] - p_padded_l[i + 2]);    // [m/s]
+
+                const double D_l = mu / dz;
+                const double D_r = mu / dz;
+
+                const double u_l_face =
+                    0.5 * (u_l[i - 1] + u_l[i]) + rc_l * rhie_chow_on_off_l;
+                const double u_r_face =
+                    0.5 * (u_l[i] + u_l[i + 1]) + rc_r * rhie_chow_on_off_l;
+
+                const double F_l = rho_l * u_l_face;
+                const double F_r = rho_l * u_r_face;
+
+                const double accum =
+                    rho_l * dz / dt * (u_l[i] - u_l_old[i]);
+
+                const double conv =
+                    F_r * u_r_face - F_l * u_l_face;
+
+                const double diff =
+                    D_r * (u_l[i + 1] - u_l[i])
+                    - D_l * (u_l[i] - u_l[i - 1]);
+
+                const double press =
+                    0.5 * (p_l[i + 1] - p_l[i - 1]);
+
+                const double R =
+                    accum + conv - diff + press;
+
+                momentum_residual =
+                    std::max(momentum_residual, std::abs(R) / F_ref);
             }
 
             outer_l++;
