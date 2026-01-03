@@ -65,7 +65,8 @@ struct Input {
 
     double rho = 0.0;                       // Density [kg/m3]
     double mu = 0.0;                        // Dynamic viscosity [kg/(m s)]
-    double alpha = 0.0;                     // Thermal diffusivity [m2/s]
+	double k = 0.0;                         // Thermal conductivity [W/(m K)]
+	double cp = 0.0;                        // Specific heat capacity [J/(kg K)]
 
     double S_m_cell = 0.0;                  // Volumetric mass source [kg/(m3 s)]
     double S_h_cell = 0.0;                  // Volumetric heat source [W/m3]
@@ -157,7 +158,8 @@ Input readInput(const std::string& filename) {
 
     in.rho = std::stod(dict["rho"]);
     in.mu = std::stod(dict["mu"]);
-    in.alpha = std::stod(dict["alpha"]);
+    in.k = std::stod(dict["k"]);
+    in.cp = std::stod(dict["cp"]);
 
     in.S_m_cell = std::stod(dict["S_m_cell"]);
     in.S_h_cell = std::stod(dict["S_h_cell"]);
@@ -232,7 +234,8 @@ int main() {
 
 	const double rho_l = in.rho;                                        // Density [kg/m3]
 	const double mu = in.mu;                                            // Dynamic viscosity [kg/(m s)]
-	const double alpha = in.alpha;                                      // Thermal diffusivity [m2/s]
+	const double k = in.k;                                              // Thermal diffusivity [m2/s]
+    const double cp = in.cp;                                            // Specific heat capacity at constant pressure [J/kgK]
 
 	std::vector<double> u_l(N, in.u_initial);                           // Velocity field [m/s]
 	std::vector<double> T_l(N, in.T_initial);                           // Temperature field [K]
@@ -435,6 +438,85 @@ int main() {
             }
 
             u_l = tdma::solve(aLU, bLU, cLU, dLU);
+
+            // ===============================================================
+            // TEMPERATURE SOLVER
+            // ===============================================================
+
+            // Energy equation for T (implicit), upwind convection, central diffusion
+            for (int i = 1; i < N - 1; i++) {
+
+                const double D_l = k / (rho_l * cp * dz);      /// [W/(m2 K)]
+                const double D_r = k / (rho_l * cp * dz);      /// [W/(m2 K)]
+
+                const double avgInvbLU_L = 0.5 * (1.0 / bLU[i - 1] + 1.0 / bLU[i]);     // [m2s/kg]
+                const double avgInvbLU_R = 0.5 * (1.0 / bLU[i + 1] + 1.0 / bLU[i]);     // [m2s/kg]
+
+                const double rc_l = -avgInvbLU_L / 4.0 *
+                    (p_padded_l[i - 2] - 3.0 * p_padded_l[i - 1] + 3.0 * p_padded_l[i] - p_padded_l[i + 1]);    // [m/s]
+                const double rc_r = -avgInvbLU_R / 4.0 *
+                    (p_padded_l[i - 1] - 3.0 * p_padded_l[i] + 3.0 * p_padded_l[i + 1] - p_padded_l[i + 2]);    // [m/s]
+
+                const double u_l_face = 0.5 * (u_l[i - 1] + u_l[i]) + rhie_chow_on_off_l * rc_l;         // [m/s]
+                const double u_r_face = 0.5 * (u_l[i] + u_l[i + 1]) + rhie_chow_on_off_l * rc_r;         // [m/s]
+
+                aLT[i] =
+                    - D_l
+                    - std::max(u_l_face, 0.0)
+                    ;              /// [W/(m2 K)]
+
+                cLT[i] =
+                    - D_r
+                    - std::max(-u_r_face, 0.0)
+                    ;            /// [W/(m2 K)]
+
+                bLT[i] =
+                    + std::max(u_r_face, 0.0)
+                    + std::max(-u_l_face, 0.0)
+                    + D_l + D_r
+                    + dz / dt
+                    ;                              /// [W/(m2 K)]
+
+                dLT[i] =
+                    + dz / dt * T_l_old[i]
+                    + S_h[i] * dz
+					+ S_m[i] * T_l_old[i] * dz / rho_l
+                    ;                          /// [W/m2]
+            }
+
+            // BCs on temperature
+            if (T_inlet_bc == 0) {                          // Dirichlet BC
+
+                aLT[0] = 0.0;
+                bLT[0] = 1.0;
+                cLT[0] = 0.0;
+                dLT[0] = T_inlet_value;
+            }
+            else if (T_inlet_bc == 1) {                     // Neumann BC
+
+                aLT[0] = 0.0;
+                bLT[0] = 1.0;
+                cLT[0] = -1.0;
+                dLT[0] = 0.0;
+            }
+
+            if (T_outlet_bc == 0) {                         // Dirichlet BC
+
+                aLT[N - 1] = 0.0;
+                bLT[N - 1] = 1.0;
+                cLT[N - 1] = 0.0;
+                dLT[N - 1] = T_outlet_value;
+            }
+            else if (T_outlet_bc == 1) {                    // Neumann BC
+
+                aLT[N - 1] = -1.0;
+                bLT[N - 1] = 1.0;
+                cLT[N - 1] = 0.0;
+                dLT[N - 1] = 0.0;
+            }
+
+            T_prev = T_l;
+            T_l = tdma::solve(aLT, bLT, cLT, dLT);
 
             rho_error_l = 1.0;
             p_error_l = 1.0;
@@ -679,81 +761,6 @@ int main() {
                 momentum_residual =
                     std::max(momentum_residual, std::abs(R) / F_ref);
             }
-
-            // ===============================================================
-            // TEMPERATURE SOLVER
-            // ===============================================================
-
-            // Energy equation for T (implicit), upwind convection, central diffusion
-            for (int i = 1; i < N - 1; i++) {
-
-                const double D_l = alpha / dz;      /// [W/(m2 K)]
-                const double D_r = alpha / dz;      /// [W/(m2 K)]
-
-                const double avgInvbLU_L = 0.5 * (1.0 / bLU[i - 1] + 1.0 / bLU[i]);     // [m2s/kg]
-                const double avgInvbLU_R = 0.5 * (1.0 / bLU[i + 1] + 1.0 / bLU[i]);     // [m2s/kg]
-
-                const double rc_l = -avgInvbLU_L / 4.0 *
-                    (p_padded_l[i - 2] - 3.0 * p_padded_l[i - 1] + 3.0 * p_padded_l[i] - p_padded_l[i + 1]);    // [m/s]
-                const double rc_r = -avgInvbLU_R / 4.0 *
-                    (p_padded_l[i - 1] - 3.0 * p_padded_l[i] + 3.0 * p_padded_l[i + 1] - p_padded_l[i + 2]);    // [m/s]
-
-                const double u_l_face = 0.5 * (u_l[i - 1] + u_l[i]) + rhie_chow_on_off_l * rc_l;         // [m/s]
-                const double u_r_face = 0.5 * (u_l[i] + u_l[i + 1]) + rhie_chow_on_off_l * rc_r;         // [m/s]
-
-                aLT[i] =
-                    -D_l
-                    - std::max(u_l_face, 0.0);              /// [W/(m2 K)]
-
-                cLT[i] =
-                    -D_r
-                    - std::max(-u_r_face, 0.0);             /// [W/(m2 K)]
-
-                bLT[i] =
-                    +std::max(u_r_face, 0.0)
-                    + std::max(-u_l_face, 0.0)
-                    + D_l + D_r
-                    + dz / dt;                              /// [W/(m2 K)]
-
-                dLT[i] =
-                    + dz / dt * T_l_old[i]
-                    + S_h[i] * dz
-                    ;                          /// [W/m2]
-            }
-
-            // BCs on temperature
-            if (T_inlet_bc == 0) {                          // Dirichlet BC
-
-                aLT[0] = 0.0;
-                bLT[0] = 1.0;
-                cLT[0] = 0.0;
-                dLT[0] = T_inlet_value;
-            }
-            else if (T_inlet_bc == 1) {                     // Neumann BC
-
-                aLT[0] = 0.0;
-                bLT[0] = 1.0;
-                cLT[0] = -1.0;
-                dLT[0] = 0.0;
-            }
-
-            if (T_outlet_bc == 0) {                         // Dirichlet BC
-
-                aLT[N - 1] = 0.0;
-                bLT[N - 1] = 1.0;
-                cLT[N - 1] = 0.0;
-                dLT[N - 1] = T_outlet_value;
-            }
-            else if (T_outlet_bc == 1) {                    // Neumann BC
-
-                aLT[N - 1] = -1.0;
-                bLT[N - 1] = 1.0;
-                cLT[N - 1] = 0.0;
-                dLT[N - 1] = 0.0;
-            }
-
-            T_prev = T_l;
-            T_l = tdma::solve(aLT, bLT, cLT, dLT);
 
             // -------------------------------
             // TEMPERATURE RESIDUAL
