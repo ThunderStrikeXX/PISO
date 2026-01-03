@@ -7,8 +7,8 @@ dt_user = 1e-3
 simulation_time = 1.0
 
 # ---------------- PISO ----------------
-piso_outer_iter = 200
-piso_inner_iter = 200
+piso_outer_iter = 5
+piso_inner_iter = 10
 piso_outer_tol = 1e-8
 piso_inner_tol = 1e-8
 rhie_chow = 1

@@ -716,8 +716,9 @@ int main() {
                     + dz / dt;                              /// [W/(m2 K)]
 
                 dLT[i] =
-                    +dz / dt * T_l_old[i]
-                    + S_h[i] * dz;                          /// [W/m2]
+                    + dz / dt * T_l_old[i]
+                    + S_h[i] * dz
+                    ;                          /// [W/m2]
             }
 
             // BCs on temperature
