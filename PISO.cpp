@@ -11,6 +11,8 @@
 
 #include "tdma.h"
 
+#pragma region input
+
 namespace fs = std::filesystem;
 
 std::string chooseInputFile(const std::string& inputDir) {
@@ -44,7 +46,7 @@ std::string chooseInputFile(const std::string& inputDir) {
         throw std::runtime_error("Invalid selection index");
     }
 
-    return files[choice].string();  // path completo al file scelto
+	return files[choice].string(); // Complete path to the selected file
 }
           
 struct Input {
@@ -101,10 +103,6 @@ struct Input {
     std::string pressure_file = "";
     std::string temperature_file = "";
 };
-
-// =======================================================================
-//                                INPUT
-// =======================================================================
 
 Input readInput(const std::string& filename) {
 
@@ -198,6 +196,8 @@ Input readInput(const std::string& filename) {
 
     return in;
 }
+
+#pragma endregion
 
 // =======================================================================
 //                                MAIN
@@ -574,7 +574,26 @@ int main() {
                 continuity_residual = 0.0;
 
                 for (int i = 1; i < N - 1; ++i) {
-                    continuity_residual = std::max(continuity_residual, std::fabs(dLP[i]));
+
+                    const double avgInvbLU_L = 0.5 * (1.0 / bLU[i - 1] + 1.0 / bLU[i]);     // [m2s/kg]
+                    const double avgInvbLU_R = 0.5 * (1.0 / bLU[i + 1] + 1.0 / bLU[i]);     // [m2s/kg]
+
+                    const double rc_l = -avgInvbLU_L / 4.0 *
+                        (p_padded_l[i - 2] - 3.0 * p_padded_l[i - 1] + 3.0 * p_padded_l[i] - p_padded_l[i + 1]);    // [m/s]
+                    const double rc_r = -avgInvbLU_R / 4.0 *
+                        (p_padded_l[i - 1] - 3.0 * p_padded_l[i] + 3.0 * p_padded_l[i + 1] - p_padded_l[i + 2]);    // [m/s]
+
+                    const double u_l_star = 0.5 * (u_l[i - 1] + u_l[i]) + rhie_chow_on_off_l * rc_l;    // [m/s]
+                    const double u_r_star = 0.5 * (u_l[i] + u_l[i + 1]) + rhie_chow_on_off_l * rc_r;    // [m/s]
+
+                    const double phi_l = rho_l * u_l_star;   // [kg/(m2s)]
+                    const double phi_r = rho_l * u_r_star;   // [kg/(m2s)]
+
+                    const double mass_imbalance = (phi_r - phi_l);  // [kg/(m2s)]
+
+                    const double mass_flux = S_m[i] * dz;         // [kg/(m2s)]
+
+                    continuity_residual = std::max(continuity_residual, std::fabs(mass_flux - mass_imbalance));
                 }
 
                 inner_l++;
