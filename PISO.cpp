@@ -319,6 +319,9 @@ int main() {
 	std::vector<double> cLT(N, 0.0);                                    // Upper tridiagonal coefficient for temperature
 	std::vector<double> dLT(N, 0.0);                                    // Known vector coefficient for temperature
 
+    const double K = 1e-8;
+	const double CF = 1e-4;
+
     fs::path inputPath(inputFile);
     std::string caseName = inputPath.filename().string();
     fs::path outputDir = fs::path("output") / caseName;
@@ -383,6 +386,8 @@ int main() {
                 const double F_l = rho_l * u_l_face; // [kg/(m2s)]
                 const double F_r = rho_l * u_r_face; // [kg/(m2s)]
 
+                const double f = +mu / K * dz + rho_l * CF * std::abs(u_l[i]) / std::sqrt(K) * dz;
+
                 aLU[i] =
                     - std::max(F_l, 0.0)
                     - D_l;                                  // [kg/(m2s)]
@@ -393,7 +398,9 @@ int main() {
                     + std::max(F_r, 0.0)
                     + std::max(-F_l, 0.0)
                     + rho_l * dz / dt
-                    + D_l + D_r;                            // [kg/(m2s)]
+                    + D_l + D_r
+                    // + f
+                    ;                            // [kg/(m2s)]
                 dLU[i] =
                     - 0.5 * (p_l[i + 1] - p_l[i - 1])
                     + rho_l * u_l_old[i] * dz / dt;         // [kg/(ms2)]
