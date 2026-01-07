@@ -399,7 +399,7 @@ int main() {
                     + std::max(-F_l, 0.0)
                     + rho_l * dz / dt
                     + D_l + D_r
-                    // + f
+                    + f
                     ;                            // [kg/(m2s)]
                 dLU[i] =
                     - 0.5 * (p_l[i + 1] - p_l[i - 1])
